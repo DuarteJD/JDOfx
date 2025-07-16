@@ -5,7 +5,7 @@ Este programa recebe como parâmetro o caminho de um arquivo com extensão ofx e
 
 ## Autores
 
-- [@octokatherine](https://github.com/DuarteJD)
+- [@duartejd](https://github.com/DuarteJD)
 
 
 ## Instalação das dependências
@@ -14,4 +14,3 @@ Este programa recebe como parâmetro o caminho de um arquivo com extensão ofx e
 ```bash
   pip install ofxparse openpyxl
 ```
-    
