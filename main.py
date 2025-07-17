@@ -14,10 +14,10 @@ def formatar_data(lnkData):
     if not lnkData:
         return None
     if isinstance(lnkData, (datetime, )):
-        return lnkData.strftime("%Y-%m-%d")
+        return lnkData.strftime("%d-%m-%Y")
     
     try:
-        return lnkData.strftime("%Y-%m-%d")
+        return lnkData.strftime("%d-%m-%Y")
     except Exception:
         return str(lnkData)
 
@@ -50,6 +50,14 @@ def pegar_dados_conta(lnkConta):
     agencia = pegar_dados(lnkConta, "branch_id") or pegar_dados(lnkConta, "routing_number")
     numeroConta = pegar_dados(lnkConta, "account_id")
     tipoConta = pegar_dados(lnkConta, "account_type")
+
+    match tipoConta:
+        case "CHECKING":
+            tipoConta = "Conta corrente"
+        case "SAVINGS":
+            tipoConta = "Poupança"
+        case "CREDITCARD":
+            tipoConta = "Cartão de crédito"
     
     dataInicial = formatar_data(pegar_dados(declaracao, "start_date"))
     dataFinal = formatar_data(pegar_dados(declaracao, "end_date"))
@@ -91,11 +99,42 @@ def normalizar_cabecalho(lnkTexto):
     return lnkTexto.lstrip("\ufeff")  # remove BOM se houver
 
 def processar_arquivo(lnkArquivoOfx, lnkArquivoExcel):
-    with open(lnkArquivoOfx, "r", encoding="utf-8") as f:
-        conteudo = f.read()
+
+    conteudo = open(lnkArquivoOfx, "rb").read()
+
+    #Pegando só começo do arquivo
+    cabecalho = conteudo[:4096].decode("ascii", errors="ignore")
+    encodeDeclarado = re.search(r"ENCODING:\s*([^\r\n]+)", cabecalho, flags=re.I)
+    charsetDeclarado = re.search(r"CHARSET:\s*([^\r\n]+)", cabecalho, flags=re.I)
+
+     # Ajusta encoding conforme dados e cabeçalho
+    encodeDeclarado = re.sub(r"\s+", "", encodeDeclarado.group(1)) if encodeDeclarado else None
+    charsetDeclarado = re.sub(r"\s+", "", charsetDeclarado.group(1)) if charsetDeclarado else None
+
+    isTemCaracterMaior = any(b >= 0x80 for b in conteudo)
+    encode = "utf-8"
+    
+    if encodeDeclarado in ("USASCII", "ASCII"):
+        encode = "cp1252" if isTemCaracterMaior else "ascii"
+    elif encodeDeclarado in ("ISO-8859-1", "LATIN1", "LATIN-1"):
+        encode = "latin-1"
+    elif encodeDeclarado in ("UTF-8", "UTF8"):
+        encode = "utf-8"
+    elif charsetDeclarado == "1252":
+        encode = "cp1252"
+
+    #Decodificando o conteúdo
+    for i in (encode, "utf-8-sig", "cp1252", "latin-1"):
+        try:
+            textoDecodificado = conteudo.decode(i)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        textoDecodificado = conteudo.decode("utf-8", errors="ignore")
     
     #Alguns bancos estão retornando o encoding fora do padrão, como o banco C6 por exemplo, que retornou o enconding = UTF - 8    
-    conteudoCorrigido = normalizar_cabecalho(conteudo)
+    conteudoCorrigido = normalizar_cabecalho(textoDecodificado)
     
     # Usa StringIO para forçar "arquivo de texto" seguro no parser
     conteudoOfx = io.StringIO(conteudoCorrigido)
@@ -116,6 +155,7 @@ def processar_arquivo(lnkArquivoOfx, lnkArquivoExcel):
         celula = sheet.cell(row=1, column=coluna)
         celula.font = Font(bold=True)
         celula.alignment = Alignment(horizontal="center")
+        celula.number_format="R$ #,##0.00_);[Red](R$ #,##0.00)"
     
     #Lendo as informações de transação
     for conta in ofx.accounts:
@@ -123,22 +163,47 @@ def processar_arquivo(lnkArquivoOfx, lnkArquivoExcel):
         dados = pegar_dados_conta(conta) 
         banco = dados["banco"]
         numeroConta = dados["conta"]
-                
+
+        tamanhoMemo = 0
+        tamanhoBeneficiario = 0
+        tamanhoID = 0
+        
+        linha = 1
         for transacao in conta.statement.transactions:
             id = transacao.id
-            data = transacao.date.strftime("%Y-%m-%d")
+            data = formatar_data(transacao.date)
             tipo = transacao.type
             valor = transacao.amount
             memo = transacao.memo
             beneficiario = transacao.payee
             cheque = transacao.checknum
 
+            match tipo:
+                case "credit":
+                    tipo = "CRÉDITO"
+                case "debit":
+                    tipo = "DÉBITO"
+
+            tamanhoBeneficiario = len(str(beneficiario)) if len(str(beneficiario)) > tamanhoBeneficiario else tamanhoBeneficiario
+            tamanhoMemo = len(str(memo)) if len(str(memo)) > tamanhoMemo else tamanhoMemo
+            tamanhoID = len(str(id)) if len(str(id)) > tamanhoID else tamanhoID
+
             sheet.append([id, banco, numeroConta, data, tipo, valor, memo, beneficiario, cheque])
+
+            linha+= 1
+            celula = sheet.cell(row=linha, column=6)
+            celula.number_format = 'R$ #,##0.00_);[Red]-R$ #,##0.00'
+
+
     
     #Ajustando o tamanho das colunas
     #A biblioteca openpyxl não possui um AutoFit, por isso precisamos deixar a coluna com uma largura fixa
     #Outra solução seria calcular o comprimento do conteúdo mais longo da coluna, e acredito não ser necessário para esse caso.
-    tamanhoColunas = [12,7,12,12,10,12,50,50,20]
+    tamanhoBeneficiario+= 2
+    tamanhoMemo+= 2
+    tamanhoID += 2
+
+    tamanhoColunas = [tamanhoID,7,12,12,10,12,tamanhoMemo,tamanhoBeneficiario,20]
     for i, tamanhoDesejado in enumerate(tamanhoColunas, start=1):
         sheet.column_dimensions[chr(64 + i)].width = tamanhoDesejado
 
