@@ -100,6 +100,7 @@ def normalizar_cabecalho(lnkTexto):
 
 def processar_arquivo(lnkArquivoOfx, lnkArquivoExcel):
 
+    #Leitura do arquivo OFX
     conteudo = open(lnkArquivoOfx, "rb").read()
 
     #Pegando só começo do arquivo
@@ -107,7 +108,7 @@ def processar_arquivo(lnkArquivoOfx, lnkArquivoExcel):
     encodeDeclarado = re.search(r"ENCODING:\s*([^\r\n]+)", cabecalho, flags=re.I)
     charsetDeclarado = re.search(r"CHARSET:\s*([^\r\n]+)", cabecalho, flags=re.I)
 
-     # Ajusta encoding conforme dados e cabeçalho
+    # Ajusta encoding conforme dados e cabeçalho
     encodeDeclarado = re.sub(r"\s+", "", encodeDeclarado.group(1)) if encodeDeclarado else None
     charsetDeclarado = re.sub(r"\s+", "", charsetDeclarado.group(1)) if charsetDeclarado else None
 
@@ -136,26 +137,24 @@ def processar_arquivo(lnkArquivoOfx, lnkArquivoExcel):
     #Alguns bancos estão retornando o encoding fora do padrão, como o banco C6 por exemplo, que retornou o enconding = UTF - 8    
     conteudoCorrigido = normalizar_cabecalho(textoDecodificado)
     
-    # Usa StringIO para forçar "arquivo de texto" seguro no parser
+    # Usa StringIO para forçar "arquivo de texto", pois a biblioteca OfxParser recebe um arquivo por parâmetro.
+    #Como temos o conteúdo já todo tratado no formato string, simulamos a criação de um arquivo em memória de nossa string para enviá-lo a biblioteca
     conteudoOfx = io.StringIO(conteudoCorrigido)
     
-    #Parseando a string em um objeto
+    #Chamando a biblioteca que irá ler o conteúdo OFX e criar um objeto 
     ofx = OfxParser.parse(conteudoOfx)
 
     #Criando uma planilha no formato Microsoft Excel
     wb = Workbook()
     sheet = wb.active
     sheet.title = "Transacoes"
-
     cabecalho = ["ID","Banco","Conta", "Data", "Tipo", "Valor", "Descrição", "Beneficiario", "Cheque"]
     sheet.append(cabecalho)
 
     #Estilizando o cabeçalho
     for coluna in range(1, len(cabecalho) + 1 ):
         celula = sheet.cell(row=1, column=coluna)
-        celula.font = Font(bold=True)
-        celula.alignment = Alignment(horizontal="center")
-        celula.number_format="R$ #,##0.00_);[Red](R$ #,##0.00)"
+        celula.font = Font(bold=True)        
     
     #Lendo as informações de transação
     for conta in ofx.accounts:
@@ -170,6 +169,7 @@ def processar_arquivo(lnkArquivoOfx, lnkArquivoExcel):
         
         linha = 1
         for transacao in conta.statement.transactions:
+            #Pegando as variáveis necessárias para inserir na planilha e deixar o código mais legível
             id = transacao.id
             data = formatar_data(transacao.date)
             tipo = transacao.type
@@ -184,21 +184,21 @@ def processar_arquivo(lnkArquivoOfx, lnkArquivoExcel):
                 case "debit":
                     tipo = "DÉBITO"
 
+            #Calculando o comprimento máximo das colunas que contém texto variável para deixar o tamanho justo na planilha
             tamanhoBeneficiario = len(str(beneficiario)) if len(str(beneficiario)) > tamanhoBeneficiario else tamanhoBeneficiario
             tamanhoMemo = len(str(memo)) if len(str(memo)) > tamanhoMemo else tamanhoMemo
             tamanhoID = len(str(id)) if len(str(id)) > tamanhoID else tamanhoID
 
+            #Adicionando uma linha com conteúdo na planilha
             sheet.append([id, banco, numeroConta, data, tipo, valor, memo, beneficiario, cheque])
 
+            #Estilizando a coluna que contém valores
             linha+= 1
             celula = sheet.cell(row=linha, column=6)
             celula.number_format = 'R$ #,##0.00_);[Red]-R$ #,##0.00'
-
-
     
     #Ajustando o tamanho das colunas
-    #A biblioteca openpyxl não possui um AutoFit, por isso precisamos deixar a coluna com uma largura fixa
-    #Outra solução seria calcular o comprimento do conteúdo mais longo da coluna, e acredito não ser necessário para esse caso.
+    #A biblioteca openpyxl não possui um AutoFit, por isso precisamos deixar a coluna com uma largura pré-fixada
     tamanhoBeneficiario+= 2
     tamanhoMemo+= 2
     tamanhoID += 2
@@ -220,6 +220,7 @@ if len(sys.argv) != 3:
 arquivo_ofx = sys.argv[1]
 arquivo_excel = sys.argv[2]
 
+#Validando a extensão do arquivo enviado por parâmetro
 if not arquivo_ofx.lower().endswith(".ofx"):
     print("Extensão inválida, aguardando um arquivo com extensão OFX. Arquivo informado: ", arquivo_ofx)
     sys.exit(1)
