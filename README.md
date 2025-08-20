@@ -23,14 +23,23 @@ pyinstaller
   pip install ofxparse openpyxl pyinstaller
 ```
 
+
 ### Parâmetros necessários para utilização do programa
 **Parâmetro 01**: string contendo o path do arquivo .ofx  
+
 **Parâmetro 02**: caminho completo do arquivo que será criado com o resultado do processamento
+
+
+
 
 ### Exemplo de utilização
 Parâmetro 01: c:\extrato.ofx
+
 Parâmetro 02: c:\extrato.xlsx
+
 Comando: **python main.py c:\extrato.ofx c:\extrato.xlsx** 
+
+
 
 ### Como criar um executável desta aplicação
 No terminal digite o comando:  
